@@ -33,7 +33,8 @@ object Main extends App {
   }
 
   val problem = makeProblem()
-  val configStream = classOf[App].getResourceAsStream("/solverconfig.xml")
+  val configStream = classOf[App].getResourceAsStream("/waterplanner/solverconfig.xml")
+  assert(configStream != null)
   val solverFactory: SolverFactory[WaterProblem] = SolverFactory.createFromXmlInputStream(configStream)
   val solver: Solver[WaterProblem] = solverFactory.buildSolver
   val solvedWaterProblem = solver.solve(problem)
