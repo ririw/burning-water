@@ -217,7 +217,7 @@ class WaterProblem(val showerTarget: Int,
   @PlanningScore var score: HardSoftScore = _
 
   @ValueRangeProvider(id = "nshowers")
-  val getDelayRange: CountableValueRange[Integer] = { ValueRangeFactory.createIntValueRange(0, 3)}
+  val showerCapacity: CountableValueRange[Integer] = { ValueRangeFactory.createIntValueRange(0, 3)}
 
   // To keep the solution neat, I've put the messy print code into a separate function.
   override def toString: String = Utils.problemToString(this)
