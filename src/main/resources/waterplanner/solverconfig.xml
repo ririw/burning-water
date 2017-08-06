@@ -7,6 +7,6 @@
     <easyScoreCalculatorClass>waterplanner.WaterSolutionScore</easyScoreCalculatorClass>
   </scoreDirectorFactory>
   <termination>
-    <secondsSpentLimit>10</secondsSpentLimit>
+    <secondsSpentLimit>20</secondsSpentLimit>
   </termination>
 </solver>

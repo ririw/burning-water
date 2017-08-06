@@ -10,22 +10,29 @@ import org.optaplanner.core.api.score.buildin.hardsoft.HardSoftScore
 import org.optaplanner.core.impl.score.director.easy.EasyScoreCalculator
 
 import scala.collection.JavaConverters._
-import scala.collection.JavaConversions._
 import scala.collection.mutable
 
 class WaterSolutionScore extends EasyScoreCalculator[WaterProblem] {
   def forceRV(waterProblem: WaterProblem): HardSoftScore = {
+    /*
+    The EA team will only have the RV, so every grain's source or destination
+    must either be the boxes or the RV.
+     */
     var hardScore = 0
     for (grain <- waterProblem.usageGrains.asScala) {
       if (grain.day < 3) {
-        if (grain.source != null      && !grain.source.name.contains("rv"))      hardScore += 1
-        if (grain.destination != null && !grain.destination.name.contains("rv")) hardScore += 1
+        if (!(grain.source.isInstanceOf[RVContainer] || grain.source.isInstanceOf[Boxes])) hardScore += 1
+        if (!grain.destination.isInstanceOf[RVContainer]) hardScore += 1
       }
     }
     HardSoftScore.valueOf(-hardScore, 0)
   }
 
   def checkGrainExists(waterProblem: WaterProblem): HardSoftScore = {
+    /*
+    Check every water usage grain is assigned somewhere, and ensure we
+    don't put fresh water into a grey water barrel.
+     */
     var hardScore = 0
     for (grain <- waterProblem.usageGrains.asScala) {
       if (grain.source == null) {
@@ -44,29 +51,40 @@ class WaterSolutionScore extends EasyScoreCalculator[WaterProblem] {
   }
 
   def verifyCapacity(waterProblem: WaterProblem): HardSoftScore = {
-    var hardScore = 0
-    val sources = waterProblem.usageGrains.collect{
-      case g if g.source != null => g.source -> g
-    }.groupBy(_._1).mapValues(_.unzip._2.toList)
-    val dests = waterProblem.usageGrains.collect{
-      case g if g.destination != null => g.destination -> g
-    }.groupBy(_._1).mapValues(_.unzip._2.toList)
+    /*
+    check the containers have space! Super duper important!
 
-    for ((source, uses) <- sources) {
-      val totalSize = uses.map(_.waterUse).sum
-      if (totalSize > source.capacity) hardScore += 1
+    1. Make a mapping, container -> capacity
+    2. Over each grain, subtract water and grey water use
+    3. Find the RV fresh water and the RV grey water tank
+    4. Over each grain, find showers, and appropriately handle their
+       3GA of water use and grey water production.
+     */
+    val containerCapacities = mutable.HashMap(waterProblem.containers.asScala.map(c => c -> c.capacity): _*)
+    for (grain <- waterProblem.usageGrains.asScala) {
+      // Handle direct source/dest
+      if (grain.source != null) containerCapacities(grain.source) = containerCapacities(grain.source) - grain.waterUse
+      if (grain.destination != null) containerCapacities(grain.destination) = containerCapacities(grain.destination) - grain.greyWater
     }
-    for ((source, uses) <- dests) {
-      val totalSize = uses.map(_.greyWater).sum
-      if (totalSize > source.capacity) hardScore += 1
+    val rvFresh = waterProblem.containers.asScala.find(_.isInstanceOf[RVWater]).get
+    val rvGrey = waterProblem.containers.asScala.find(_.isInstanceOf[RVGreyWater]).get
+    for (grain <- waterProblem.usageGrains.asScala) {
+      containerCapacities(rvFresh) = containerCapacities(rvFresh) - grain.showers * 3
+      containerCapacities(rvGrey) = containerCapacities(rvGrey) - grain.showers * 3
     }
 
-    HardSoftScore.valueOf(-hardScore, 0)
+    val problems = containerCapacities.values.count(_ < 0)
+    HardSoftScore.valueOf(-problems, 0)
   }
 
   def neatness(waterProblem: WaterProblem): HardSoftScore = {
+    /*
+    Discourage changes. I want neat solutions.
+    This is a soft score, because we'll take a messy solution if one is
+    needed.
+     */
     var softScore = 0
-    for ((a, b) <- waterProblem.usageGrains.zip(waterProblem.usageGrains.tail)) {
+    for ((a, b) <- waterProblem.usageGrains.asScala.zip(waterProblem.usageGrains.asScala.tail)) {
       if (a.source != b.source) softScore += 1
       if (a.destination != b.destination) softScore += 1
     }
@@ -74,80 +92,89 @@ class WaterSolutionScore extends EasyScoreCalculator[WaterProblem] {
   }
 
   def ensureNoverlap(waterProblem: WaterProblem): HardSoftScore = {
-    try {
-      val lastFresh = waterProblem.usageGrains.zipWithIndex.filter { case (use, ix) =>
-        use.source != null && use.source.name == "barrel 1  "
-      }.map(_._2).max
-      val firstGrey = waterProblem.usageGrains.zipWithIndex.filter { case (use, ix) =>
-        use.destination != null && use.destination.name == "grey barre"
-      }.map(_._2).min
-      val score = if (lastFresh >= firstGrey) 1 else 0
-      HardSoftScore.valueOf(-score, 0)
-    } catch {
-      case e: java.lang.UnsupportedOperationException => HardSoftScore.ZERO
+    /*
+    All the barrels have IDs. No fresh water barrel may be used as grey water,
+    and then as fresh water again.
+
+    Basically, this represents taking an (ideally empty) barrel, and using it for
+    grey water after emptying the fresh onto the playa in a responsible way. I'd
+    recommend getting drunk and rolling the barrel up and down the street with the
+    cap off.
+     */
+    val waterBarrelUses = waterProblem.usageGrains.asScala.flatMap{ grain =>
+      // For any grain with non-null source, find the ones using water barrels
+      // and then make an ID -> Day list
+      Option(grain.source).collect{
+        case b: WaterBarrel => b.id -> grain.day
+      }
     }
+    val greyWaterBarrelUses = waterProblem.usageGrains.asScala.flatMap{ grain =>
+      Option(grain.destination).collect{
+        case b: GreywaterBarrel => b.id -> grain.day
+      }
+    }
+
+    // Escape early if there can be no overlap because no
+    // barrel is used for water or grey water
+    if (waterBarrelUses.isEmpty || greyWaterBarrelUses.isEmpty)
+      return HardSoftScore.ZERO
+
+    val barrelLastFresh = waterBarrelUses.groupBy(_._1).mapValues(v => v.maxBy(_._2)._2)
+    val barrelFirstGrey = greyWaterBarrelUses.groupBy(_._1).mapValues(v => v.minBy(_._2)._2)
+
+    val scores = for {
+      (barrel, lastFresh) <- barrelLastFresh
+    } yield {
+      barrelFirstGrey.get(barrel) match {
+        case None => 0
+        case Some(v) if v <= lastFresh => 1
+        case _ => 0
+      }
+    }
+
+    HardSoftScore.valueOf(-scores.sum, 0)
+  }
+
+  def discourageBarrelGreyWater(problem: WaterProblem): HardSoftScore = {
+    val dests = problem.usageGrains.asScala.flatMap(v => Option(v.destination))
+    val barrelDests = dests.filter(_.isInstanceOf[GreywaterBarrel]).distinct
+    HardSoftScore.valueOf(0, -barrelDests.length)
   }
 
   def calculateScore(problem: WaterProblem): Score[_] = {
-    var hardScore = 0
-    var softScore = 0
+    HardSoftScore.ZERO
+      .add(forceRV(problem))
+      .add(checkGrainExists(problem))
+      .add(verifyCapacity(problem))
+      .add(neatness(problem))
+      .add(ensureNoverlap(problem))
+      .add(discourageBarrelGreyWater(problem))
+  }
 
-    val containerUsage = mutable.HashMap[String, Double](problem.containers.map(v => v.name -> v.capacity.toDouble): _*)
-
-    for (grain <- problem.usageGrains) {
-      if (grain.source == null) {
-        hardScore += 1
-      } else {
-        if (grain.source.isGrey) hardScore += 1
-        if (grain.day < 3 && !(
-            grain.source.name.contains("rv") ||
-            grain.source.name.contains("boxen"))) {
-          hardScore += 1
-        }
-        containerUsage.update(grain.source.name, containerUsage(grain.source.name) - grain.waterUse)
-      }
-
-      if (grain.destination == null) {
-        hardScore += 1
-      } else {
-        if (!grain.destination.isGrey) hardScore += 1
-        if (grain.day < 3 && !grain.destination.name.contains("rv")) {
-          hardScore += 1
-        }
-        containerUsage.update(grain.destination.name, containerUsage(grain.destination.name) - grain.greyWater)
-      }
-
-      containerUsage.update(
-        "rv fresh  ",
-        containerUsage("rv fresh  ") - 3*grain.showers
-      )
-      containerUsage.update(
-        "rv - grey ",
-        containerUsage("rv - grey ") - 3*grain.showers
-      )
-    }
-
-    for ((source, sourceV) <- containerUsage) {
-      if (sourceV < 0){
-        if (source.contains("grey") || source.contains("black")) softScore += 100
-        else hardScore += 1
-      }
-    }
-
-    for ((g1, g2) <- problem.usageGrains.zip(problem.usageGrains.tail)) {
-      if (g1.source != g2.source) softScore += 1
-      if (g1.destination != g2.destination) softScore += 1
-    }
-
-    HardSoftScore.valueOf(-hardScore, -softScore).add(ensureNoverlap(problem))
+  def scoreString(problem: WaterProblem): String = {
+    "Greybarrels:" + discourageBarrelGreyWater(problem).toString + "\n" +
+    "Graincheck: " + checkGrainExists(problem).toString + "\n" +
+    "Capacity:   " + verifyCapacity(problem).toString + "\n" +
+    "neatness:   " + neatness(problem).toString + "\n" +
+    "Noverlap:   " + ensureNoverlap(problem).toString + "\n" +
+    "forceRV:    " + forceRV(problem).toString + "\n" +
+    "total:      " + calculateScore(problem).toString
   }
 }
 
 class WaterContainer(val name: String,
-                     val capacity: Integer,
+                     val capacity: Double,
                      var isGrey: Boolean) {
   def this() = this(null, 0, true)
 }
+
+class WaterBarrel(val id: Integer) extends WaterContainer(s"barrel $id", 55, false)
+class GreywaterBarrel(val id: Integer) extends WaterContainer(s"grey barrel $id", 55, true)
+class Boxes(c: Double) extends WaterContainer("boxwater", c, false)
+class RVContainer(n: String, c: Int, g: Boolean) extends WaterContainer(n, c, g)
+class RVWater() extends RVContainer("rv water", 55, false)
+class RVGreyWater() extends RVContainer(s"rv grey", 28, true)
+class RVBlackWater() extends RVContainer("rv black", 21, true)
 
 @PlanningEntity
 class WaterUseDay(val day: Int, val waterUse: Double, val greyWater: Double, val showers: Int,
@@ -171,29 +198,6 @@ class WaterProblem(private val _containers: List[WaterContainer], private val _g
   val usageGrains: java.util.List[WaterUseDay] = _grains.asJava
   @PlanningScore var score: HardSoftScore = _
 
-  override def toString: String = {
-    val cs = containers
-    val gs = usageGrains
-    val contS = cs.map {c =>
-      var total = 0d
-      val holdings = gs.map{g =>
-        (g.source, g.destination) match {
-          case (a, b) if a == c && b == c =>
-            total += g.greyWater
-            total += g.waterUse
-            "x"
-          case (a, b) if a == c =>
-            total += g.waterUse
-            "s"
-          case (a, b) if b == c =>
-            total += g.greyWater
-            "d"
-          case _ => " "
-        }
-      }
-      s"${c.name}: " + holdings.mkString("") + s"\t$total/${c.capacity}"
-    }
-    val s = contS.mkString("\n") + "\n"
-    s
-  }
+  // To keep the solution neat, I've put the messy print code into a separate function.
+  override def toString: String = Utils.problemToString(this)
 }
