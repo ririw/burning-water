@@ -74,13 +74,9 @@ class WaterSolutionScore extends EasyScoreCalculator[WaterProblem] {
       containerCapacities(rvFresh) = containerCapacities(rvFresh) - grain.showers * 3
       containerCapacities(rvGrey) = containerCapacities(rvGrey) - grain.showers * 3
     }
-    val barrelMaxFullness = containerCapacities.map{
-      case (g: GreywaterBarrel, c) => c.ceil.toInt
-      case _ => 0
-    }.max
 
     val problems = containerCapacities.values.count(_ < 0)
-    HardSoftScore.valueOf(-problems, -barrelMaxFullness)
+    HardSoftScore.valueOf(-problems, 0)
   }
 
   def neatness(waterProblem: WaterProblem): HardSoftScore = {
