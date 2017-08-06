@@ -22,7 +22,7 @@ class WaterSolutionScore extends EasyScoreCalculator[WaterProblem] {
     for (grain <- waterProblem.usageGrains.asScala) {
       if (grain.day < 3) {
         if (!(grain.source.isInstanceOf[RVContainer] || grain.source.isInstanceOf[Boxes])) hardScore += 1
-        if (!grain.destination.isInstanceOf[RVContainer]) hardScore += 1
+        if (!grain.dest.isInstanceOf[RVContainer]) hardScore += 1
       }
     }
     HardSoftScore.valueOf(-hardScore, 0)
@@ -41,10 +41,10 @@ class WaterSolutionScore extends EasyScoreCalculator[WaterProblem] {
         if (grain.source.isGrey) hardScore += 1
       }
 
-      if (grain.destination == null) {
+      if (grain.dest == null) {
         hardScore += 1
       } else {
-        if (!grain.destination.isGrey) hardScore += 1
+        if (!grain.dest.isGrey) hardScore += 1
       }
     }
     HardSoftScore.valueOf(-hardScore, 0)
@@ -64,7 +64,7 @@ class WaterSolutionScore extends EasyScoreCalculator[WaterProblem] {
     for (grain <- waterProblem.usageGrains.asScala) {
       // Handle direct source/dest
       if (grain.source != null) containerCapacities(grain.source) = containerCapacities(grain.source) - grain.waterUse
-      if (grain.destination != null) containerCapacities(grain.destination) = containerCapacities(grain.destination) - grain.greyWater
+      if (grain.dest != null) containerCapacities(grain.dest) = containerCapacities(grain.dest) - grain.greyWater
     }
     val rvFresh = waterProblem.containers.asScala.find(_.isInstanceOf[RVWater]).get
     val rvGrey = waterProblem.containers.asScala.find(_.isInstanceOf[RVGreyWater]).get
@@ -86,7 +86,7 @@ class WaterSolutionScore extends EasyScoreCalculator[WaterProblem] {
     var softScore = 0
     for ((a, b) <- waterProblem.usageGrains.asScala.zip(waterProblem.usageGrains.asScala.tail)) {
       if (a.source != b.source) softScore += 1
-      if (a.destination != b.destination) softScore += 1
+      if (a.dest != b.dest) softScore += 1
     }
     HardSoftScore.valueOf(0, -softScore)
   }
@@ -109,7 +109,7 @@ class WaterSolutionScore extends EasyScoreCalculator[WaterProblem] {
       }
     }
     val greyWaterBarrelUses = waterProblem.usageGrains.asScala.flatMap{ grain =>
-      Option(grain.destination).collect{
+      Option(grain.dest).collect{
         case b: GreywaterBarrel => b.id -> grain.day
       }
     }
@@ -136,7 +136,7 @@ class WaterSolutionScore extends EasyScoreCalculator[WaterProblem] {
   }
 
   def discourageBarrelGreyWater(problem: WaterProblem): HardSoftScore = {
-    val dests = problem.usageGrains.asScala.flatMap(v => Option(v.destination))
+    val dests = problem.usageGrains.asScala.flatMap(v => Option(v.dest))
     val barrelDests = dests.filter(_.isInstanceOf[GreywaterBarrel]).distinct
     HardSoftScore.valueOf(0, -barrelDests.length)
   }
@@ -179,7 +179,7 @@ class RVBlackWater() extends RVContainer("rv black", 21, true)
 @PlanningEntity
 class WaterUseDay(val day: Int, val waterUse: Double, val greyWater: Double, val showers: Int,
                   _source: WaterContainer, _dest: WaterContainer) {
-  @PlanningVariable(valueRangeProviderRefs = Array("containers")) var destination: WaterContainer = _dest
+  @PlanningVariable(valueRangeProviderRefs = Array("containers")) var dest: WaterContainer = _dest
   @PlanningVariable(valueRangeProviderRefs = Array("containers")) var source: WaterContainer = _source
   def this() = this(0, 0, 0, 0, null, null)
 }

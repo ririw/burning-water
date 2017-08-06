@@ -16,7 +16,7 @@ object Utils {
     val contS = cs.map {c =>
       var total = 0d
       val holdings = gs.map{g =>
-        (g.source, g.destination) match {
+        (g.source, g.dest) match {
           case (a, b) if a == c && b == c =>
             total += g.greyWater
             total += g.waterUse
