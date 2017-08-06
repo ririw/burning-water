@@ -1,5 +1,9 @@
 package waterplanner
 
+import java.net.URI
+import java.nio.file
+import scala.collection.JavaConverters._
+
 import org.optaplanner.core.api.solver.{Solver, SolverFactory}
 
 /**
@@ -33,7 +37,9 @@ object Main extends App {
   }
 
   val problem = makeProblem()
-  val configStream = classOf[App].getResourceAsStream("/waterplanner/solverconfig.xml")
+  // Work around SBT's derpyness with resource and class loading.
+  // https://stackoverflow.com/questions/6485880/how-can-i-access-a-resource-when-running-an-sbt-runtask
+  val configStream = Class.forName("waterplanner.Main").getResourceAsStream("/waterplanner/solverconfig.xml")
   assert(configStream != null)
   val solverFactory: SolverFactory[WaterProblem] = SolverFactory.createFromXmlInputStream(configStream)
   val solver: Solver[WaterProblem] = solverFactory.buildSolver
