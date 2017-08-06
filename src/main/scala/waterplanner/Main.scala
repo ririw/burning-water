@@ -10,11 +10,11 @@ object Main extends App {
     val containers = List(
       new WaterBarrel(1),
       new WaterBarrel(2),
-      new Boxes(36),
+      new Boxes(12 * 2 + 5 * 3),
       new GreywaterBarrel(1),
       new GreywaterBarrel(2),
       new RVBlackWater(),
-      new RVGreyWater(),
+      new RVGreyWater(2),
       new RVWater()
     )
     val useGrains = List(
@@ -45,6 +45,7 @@ object Main extends App {
   val score = ws.calculateScore(solvedWaterProblem)
   // Before/after
   println(ws.scoreString(problem))
+  print(problem)
   println("----------")
   println(ws.scoreString(solvedWaterProblem))
   print(solvedWaterProblem)

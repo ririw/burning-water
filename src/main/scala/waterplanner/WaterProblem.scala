@@ -59,6 +59,8 @@ class WaterSolutionScore extends EasyScoreCalculator[WaterProblem] {
     3. Find the RV fresh water and the RV grey water tank
     4. Over each grain, find showers, and appropriately handle their
        3GA of water use and grey water production.
+    5. We add one soft constraint, to discourage filling the water
+       barrels too high. They become hard to manage.
      */
     val containerCapacities = mutable.HashMap(waterProblem.containers.asScala.map(c => c -> c.capacity): _*)
     for (grain <- waterProblem.usageGrains.asScala) {
@@ -72,9 +74,13 @@ class WaterSolutionScore extends EasyScoreCalculator[WaterProblem] {
       containerCapacities(rvFresh) = containerCapacities(rvFresh) - grain.showers * 3
       containerCapacities(rvGrey) = containerCapacities(rvGrey) - grain.showers * 3
     }
+    val barrelMaxFullness = containerCapacities.map{
+      case (g: GreywaterBarrel, c) => c.ceil.toInt
+      case _ => 0
+    }.max
 
     val problems = containerCapacities.values.count(_ < 0)
-    HardSoftScore.valueOf(-problems, 0)
+    HardSoftScore.valueOf(-problems, -barrelMaxFullness)
   }
 
   def neatness(waterProblem: WaterProblem): HardSoftScore = {
@@ -138,7 +144,7 @@ class WaterSolutionScore extends EasyScoreCalculator[WaterProblem] {
   def discourageBarrelGreyWater(problem: WaterProblem): HardSoftScore = {
     val dests = problem.usageGrains.asScala.flatMap(v => Option(v.dest))
     val barrelDests = dests.filter(_.isInstanceOf[GreywaterBarrel]).distinct
-    HardSoftScore.valueOf(0, -barrelDests.length)
+    HardSoftScore.valueOf(0, -barrelDests.length * 100)
   }
 
   def encourageShowers(problem: WaterProblem): HardSoftScore = {
@@ -186,7 +192,7 @@ class GreywaterBarrel(val id: Integer) extends WaterContainer(s"grey barrel $id"
 class Boxes(c: Double) extends WaterContainer("boxwater", c, false)
 class RVContainer(n: String, c: Int, g: Boolean) extends WaterContainer(n, c, g)
 class RVWater() extends RVContainer("rv water", 55, false)
-class RVGreyWater() extends RVContainer(s"rv grey", 28*2, true)
+class RVGreyWater(nTanks: Int) extends RVContainer(s"rv grey", 28*nTanks, true)
 class RVBlackWater() extends RVContainer("rv black", 21, true)
 
 @PlanningEntity
@@ -215,7 +221,7 @@ class WaterProblem(val showerTarget: Int,
   @PlanningScore var score: HardSoftScore = _
 
   @ValueRangeProvider(id = "nshowers")
-  val getDelayRange: CountableValueRange[Integer] = { ValueRangeFactory.createIntValueRange(0, 5)}
+  val getDelayRange: CountableValueRange[Integer] = { ValueRangeFactory.createIntValueRange(0, 3)}
 
   // To keep the solution neat, I've put the messy print code into a separate function.
   override def toString: String = Utils.problemToString(this)
