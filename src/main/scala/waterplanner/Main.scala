@@ -1,9 +1,5 @@
 package waterplanner
 
-import java.net.URI
-import java.nio.file
-import scala.collection.JavaConverters._
-
 import org.optaplanner.core.api.solver.{Solver, SolverFactory}
 
 /**
@@ -22,19 +18,19 @@ object Main extends App {
       new RVWater()
     )
     val useGrains = List(
-      WaterUseDay.fromPeople(1,  5,  0),
-      WaterUseDay.fromPeople(2,  5,  0),
-      WaterUseDay.fromPeople(3,  12, 1),
-      WaterUseDay.fromPeople(4,  12, 0),
-      WaterUseDay.fromPeople(5,  12, 0),
-      WaterUseDay.fromPeople(6,  12, 0),
-      WaterUseDay.fromPeople(7,  12, 1),
-      WaterUseDay.fromPeople(8,  12, 1),
-      WaterUseDay.fromPeople(9,  12, 1),
-      WaterUseDay.fromPeople(10, 12, 1),
-      WaterUseDay.fromPeople(11, 12, 0)
+      WaterUseDay.fromPeople(1,  5),
+      WaterUseDay.fromPeople(2,  5),
+      WaterUseDay.fromPeople(3,  12),
+      WaterUseDay.fromPeople(4,  12),
+      WaterUseDay.fromPeople(5,  12),
+      WaterUseDay.fromPeople(6,  12),
+      WaterUseDay.fromPeople(7,  12),
+      WaterUseDay.fromPeople(8,  12),
+      WaterUseDay.fromPeople(9,  12),
+      WaterUseDay.fromPeople(10, 12),
+      WaterUseDay.fromPeople(11, 12)
     )
-    new WaterProblem(containers, useGrains)
+    new WaterProblem(5, containers, useGrains)
   }
 
   val problem = makeProblem()

@@ -3,7 +3,7 @@ package waterplanner
 import org.optaplanner.core.api.domain.entity.PlanningEntity
 import org.optaplanner.core.api.domain.solution.{PlanningEntityCollectionProperty, PlanningScore, PlanningSolution}
 import org.optaplanner.core.api.domain.solution.drools.ProblemFactCollectionProperty
-import org.optaplanner.core.api.domain.valuerange.ValueRangeProvider
+import org.optaplanner.core.api.domain.valuerange.{CountableValueRange, ValueRangeFactory, ValueRangeProvider}
 import org.optaplanner.core.api.domain.variable.PlanningVariable
 import org.optaplanner.core.api.score.Score
 import org.optaplanner.core.api.score.buildin.hardsoft.HardSoftScore
@@ -141,6 +141,17 @@ class WaterSolutionScore extends EasyScoreCalculator[WaterProblem] {
     HardSoftScore.valueOf(0, -barrelDests.length)
   }
 
+  def encourageShowers(problem: WaterProblem): HardSoftScore = {
+    // Not negative! We _want_ showers.
+    HardSoftScore.valueOf(0, problem.usageGrains.asScala.map {
+      // Less value at the start
+      case g if g.day < 4 => g.showers * 3
+      case g if g.day < 10 => g.showers * 8
+      // Less value at the end, about to go home...
+      case g => g.showers * 4
+    }.sum)
+  }
+
   def calculateScore(problem: WaterProblem): Score[_] = {
     HardSoftScore.ZERO
       .add(forceRV(problem))
@@ -149,6 +160,7 @@ class WaterSolutionScore extends EasyScoreCalculator[WaterProblem] {
       .add(neatness(problem))
       .add(ensureNoverlap(problem))
       .add(discourageBarrelGreyWater(problem))
+      .add(encourageShowers(problem))
   }
 
   def scoreString(problem: WaterProblem): String = {
@@ -157,6 +169,7 @@ class WaterSolutionScore extends EasyScoreCalculator[WaterProblem] {
     "Capacity:   " + verifyCapacity(problem).toString + "\n" +
     "neatness:   " + neatness(problem).toString + "\n" +
     "Noverlap:   " + ensureNoverlap(problem).toString + "\n" +
+    "Showers:    " + encourageShowers(problem).toString + "\n" +
     "forceRV:    " + forceRV(problem).toString + "\n" +
     "total:      " + calculateScore(problem).toString
   }
@@ -173,30 +186,36 @@ class GreywaterBarrel(val id: Integer) extends WaterContainer(s"grey barrel $id"
 class Boxes(c: Double) extends WaterContainer("boxwater", c, false)
 class RVContainer(n: String, c: Int, g: Boolean) extends WaterContainer(n, c, g)
 class RVWater() extends RVContainer("rv water", 55, false)
-class RVGreyWater() extends RVContainer(s"rv grey", 28, true)
+class RVGreyWater() extends RVContainer(s"rv grey", 28*2, true)
 class RVBlackWater() extends RVContainer("rv black", 21, true)
 
 @PlanningEntity
-class WaterUseDay(val day: Int, val waterUse: Double, val greyWater: Double, val showers: Int,
+class WaterUseDay(val day: Int, val waterUse: Double, val greyWater: Double,
                   _source: WaterContainer, _dest: WaterContainer) {
+  @PlanningVariable(valueRangeProviderRefs = Array("nshowers")) var showers: Integer = 0
   @PlanningVariable(valueRangeProviderRefs = Array("containers")) var dest: WaterContainer = _dest
   @PlanningVariable(valueRangeProviderRefs = Array("containers")) var source: WaterContainer = _source
-  def this() = this(0, 0, 0, 0, null, null)
+  def this() = this(0, 0, 0, null, null)
 }
 
 object WaterUseDay {
-  def fromPeople(day: Int, n: Int, showers: Int) = new WaterUseDay(day, n*1.5, n*0.75, showers, null, null)
+  def fromPeople(day: Int, n: Int) = new WaterUseDay(day, n*1.5, n*0.75, null, null)
 }
 
 @PlanningSolution
-class WaterProblem(private val _containers: List[WaterContainer], private val _grains: List[WaterUseDay]) {
-  def this() = this(null, null)
+class WaterProblem(val showerTarget: Int,
+                   private val _containers: List[WaterContainer],
+                   private val _grains: List[WaterUseDay]) {
+  def this() = this(0, null, null)
 
   @ValueRangeProvider(id = "containers") @ProblemFactCollectionProperty
   val containers: java.util.List[WaterContainer] = _containers.asJava
   @PlanningEntityCollectionProperty
   val usageGrains: java.util.List[WaterUseDay] = _grains.asJava
   @PlanningScore var score: HardSoftScore = _
+
+  @ValueRangeProvider(id = "nshowers")
+  val getDelayRange: CountableValueRange[Integer] = { ValueRangeFactory.createIntValueRange(0, 5)}
 
   // To keep the solution neat, I've put the messy print code into a separate function.
   override def toString: String = Utils.problemToString(this)

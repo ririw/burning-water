@@ -7,7 +7,7 @@ object Utils {
   def problemToString(waterProblem: WaterProblem): String = {
     val cs = waterProblem.containers.asScala
     val gs = waterProblem.usageGrains.asScala
-    val showerString = "        showers: |" + gs.map(_.showers).map{
+    val showerString = "        showers: |" + gs.map(_.showers.toInt).map{
       case 0 => " "
       case 1 => "▄"
       case 2 => "█"
